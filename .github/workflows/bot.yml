@@ -2,7 +2,7 @@ name: RecehDEX Bot
 
 on:
   schedule:
-    - cron: '0 */1 * * *'
+    - cron: '0 */1 * * *'  # Tiap 1 jam
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install web3 python-telegram-bot
+      - run: pip install web3 python-telegram-bot requests
       - name: Run Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
