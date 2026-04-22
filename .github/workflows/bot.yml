@@ -1,0 +1,62 @@
+name: RecehDEX Telegram Bot
+
+on:
+  schedule:
+    # Jalankan setiap 5 menit
+    - cron: '*/5 * * * *'
+  # Bisa juga dijalankan manual dari GitHub
+  workflow_dispatch:
+  # Jalankan saat push ke main branch (untuk testing)
+  push:
+    branches:
+      - main
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Create cache directory
+      run: mkdir -p bot_cache
+    
+    - name: Run RecehDEX Bot
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        python recehdex_bot.py
+    
+    - name: Upload cache artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: bot-cache
+        path: pairs_cache.json
+        retention-days: 7
+    
+    - name: Download previous cache
+      uses: actions/download-artifact@v4
+      with:
+        name: bot-cache
+        path: .
+      continue-on-error: true
