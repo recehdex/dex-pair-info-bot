@@ -18,7 +18,7 @@ USD_ADDRESS = "0x6dC1bC519a8c861d509351763a6f9aBb6B07b57B"
 WRIC_ADDRESS = "0xEa126036c94Ab6A384A25A70e29E2fE2D4a91e68"
 FACTORY_ADDRESS = "0xAeEdf8B9925c6316171f7c2815e387DE596Fa11B"
 
-RPC_URL = "https://seed-richechain.com:8586/"
+RPC_URL = "https://seed-richechain.com/"
 EXPLORER_URL = "https://richescan.com"
 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
