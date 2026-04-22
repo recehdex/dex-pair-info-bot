@@ -1,11 +1,12 @@
 import asyncio
 from web3 import Web3
-from telegram import Bot
+from telegram import Bot, InputFile
 from telegram.constants import ParseMode
 import logging
 from datetime import datetime
 import os
 import json
+import aiohttp
 
 # Konfigurasi
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -48,6 +49,17 @@ FACTORY_ABI = [
     {"constant": True, "inputs": [{"name": "", "type": "uint256"}], "name": "allPairs", "outputs": [{"name": "", "type": "address"}], "type": "function"}
 ]
 
+async def download_banner():
+    """Download banner dari URL"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(BANNER_URL) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+    except:
+        pass
+    return None
+
 def get_token_info(token_address):
     try:
         token = w3.eth.contract(address=Web3.to_checksum_address(token_address), abi=TOKEN_ABI)
@@ -56,10 +68,12 @@ def get_token_info(token_address):
         return "Unknown", 18
 
 def get_all_pairs():
-    """Ambil SEMUA pair dari factory, bukan cuma yang USD"""
+    """Ambil SEMUA pair dari factory"""
     try:
         factory = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDRESS), abi=FACTORY_ABI)
         total_pairs = factory.functions.allPairsLength().call()
+        
+        logger.info(f"Total pairs di factory: {total_pairs}")
         
         pairs = []
         for i in range(min(total_pairs, 100)):
@@ -92,17 +106,11 @@ def get_all_pairs():
                     liquidity_usd = reserve0 * 2
                 elif token1.lower() == USD_ADDRESS.lower():
                     liquidity_usd = reserve1 * 2
-                else:
-                    # Jika pair tidak dengan USD, estimasi dengan WRIC
-                    if token0.lower() == WRIC_ADDRESS.lower():
-                        liquidity_usd = reserve0 * 1  # asumsi 1 WRIC = 1 USD
-                    elif token1.lower() == WRIC_ADDRESS.lower():
-                        liquidity_usd = reserve1 * 1
                 
                 pairs.append({
                     "address": pair_address,
-                    "token0": {"symbol": token0_symbol, "reserve": reserve0, "address": token0},
-                    "token1": {"symbol": token1_symbol, "reserve": reserve1, "address": token1},
+                    "token0": {"symbol": token0_symbol, "reserve": reserve0},
+                    "token1": {"symbol": token1_symbol, "reserve": reserve1},
                     "pair_name": f"{token0_symbol}/{token1_symbol}",
                     "price_usd": price_usd,
                     "liquidity_usd": liquidity_usd,
@@ -111,84 +119,91 @@ def get_all_pairs():
             except Exception as e:
                 continue
         
+        # Urutkan berdasarkan likuiditas tertinggi
+        pairs.sort(key=lambda x: x['liquidity_usd'], reverse=True)
         return pairs
     except Exception as e:
         logger.error(f"Error: {e}")
         return []
 
-def format_message(pairs):
-    """Format HTML dengan banner di ATAS dan desain bersih"""
+def format_caption(pairs):
+    """Format caption tanpa banner (banner dikirim terpisah)"""
     
-    # Banner di awal (pake img src biar muncul di atas)
-    message = f'<img src="{BANNER_URL}" width="500" />\n\n'
-    message += "<b>🔥 RECEHDEX PAIR LIST</b>\n"
-    message += "<code>═══════════════════════════════</code>\n\n"
+    caption = "<b>🔥 RECEHDEX PAIR LIST</b>\n"
+    caption += "<code>═══════════════════════════════</code>\n\n"
     
-    for pair in pairs:
-        # Format harga
-        if pair["price_usd"] > 0:
-            if pair["price_usd"] < 0.000001:
-                price_str = f"${pair['price_usd']:.10f}"
-            elif pair["price_usd"] < 0.001:
-                price_str = f"${pair['price_usd']:.8f}"
+    if not pairs:
+        caption += "Belum ada pair di RecehDEX\n"
+    else:
+        for pair in pairs[:30]:  # Maksimal 30 pair biar ga kepanjangan
+            # Format harga
+            if pair["price_usd"] > 0:
+                if pair["price_usd"] < 0.000001:
+                    price_str = f"${pair['price_usd']:.10f}"
+                elif pair["price_usd"] < 0.001:
+                    price_str = f"${pair['price_usd']:.8f}"
+                else:
+                    price_str = f"${pair['price_usd']:.4f}"
             else:
-                price_str = f"${pair['price_usd']:.4f}"
-        else:
-            price_str = "N/A"
-        
-        # Format likuiditas
-        if pair["liquidity_usd"] > 0:
-            liq_str = f"${pair['liquidity_usd']:,.0f}"
-        else:
-            liq_str = "N/A"
-        
-        message += f"<b>🪙 {pair['pair_name']}</b>\n"
-        message += f"   💰 Harga: <code>{price_str}</code>\n"
-        message += f"   💧 Likuiditas: <code>{liq_str}</code>\n"
-        message += f"   📦 LP Supply: <code>{pair['lp_supply']:,.0f}</code>\n"
-        
-        # Link explorer
-        message += f"   🔗 <a href='{EXPLORER_URL}/address/{pair['address']}'>Lihat Pair</a>\n\n"
+                price_str = "N/A"
+            
+            # Format likuiditas
+            if pair["liquidity_usd"] > 0:
+                liq_str = f"${pair['liquidity_usd']:,.0f}"
+            else:
+                liq_str = "N/A"
+            
+            caption += f"<b>🪙 {pair['pair_name']}</b>\n"
+            caption += f"   💰 Harga: <code>{price_str}</code>\n"
+            caption += f"   💧 Likuiditas: <code>{liq_str}</code>\n"
+            caption += f"   📦 LP Supply: <code>{pair['lp_supply']:,.0f}</code>\n"
+            caption += f"   🔗 <a href='{EXPLORER_URL}/address/{pair['address']}'>Lihat Pair</a>\n\n"
     
-    message += "<code>═══════════════════════════════</code>\n"
-    message += f"<i>🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</i>"
+    caption += "<code>═══════════════════════════════</code>\n"
+    caption += f"<i>🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</i>"
     
-    return message
+    return caption
 
 async def main():
-    logger.info("Starting...")
+    logger.info("Starting RecehDEX Bot...")
     
+    # Cek koneksi ke Riche Chain
     if not w3.is_connected():
-        logger.error("Gak bisa konek ke Riche Chain")
+        logger.error("Gagal konek ke Riche Chain")
         return
+    
+    logger.info(f"Connected ke Riche Chain, block: {w3.eth.block_number}")
     
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     
     # Ambil semua pair
     pairs = get_all_pairs()
+    logger.info(f"Dapat {len(pairs)} pair")
     
-    if not pairs:
-        # Kirim pesan kalau kosong
-        msg = f'<img src="{BANNER_URL}" width="500" />\n\n'
-        msg += "<b>⚠️ TIDAK ADA PAIR</b>\n"
-        msg += "<code>═══════════════════════════════</code>\n"
-        msg += "\nBelum ada pair di RecehDEX\n"
-        msg += f"\n🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode=ParseMode.HTML)
-        return
+    # Download banner
+    banner_data = await download_banner()
     
-    # Kirim pesan
-    message = format_message(pairs)
+    # Format caption
+    caption = format_caption(pairs)
     
-    # Kirim ke Telegram (banner udah include di dalam message)
-    await bot.send_message(
-        chat_id=TELEGRAM_CHAT_ID,
-        text=message,
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=False
-    )
-    
-    logger.info(f"Berhasil kirim {len(pairs)} pair")
+    # Kirim ke Telegram
+    if banner_data:
+        # Kirim gambar + caption
+        await bot.send_photo(
+            chat_id=TELEGRAM_CHAT_ID,
+            photo=InputFile(banner_data, filename="banner.png"),
+            caption=caption,
+            parse_mode=ParseMode.HTML
+        )
+        logger.info("Berhasil kirim banner + daftar pair")
+    else:
+        # Kirim caption aja kalo banner gagal download
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=caption,
+            parse_mode=ParseMode.HTML
+        )
+        logger.info("Berhasil kirim daftar pair (tanpa banner)")
 
 if __name__ == "__main__":
     asyncio.run(main())
