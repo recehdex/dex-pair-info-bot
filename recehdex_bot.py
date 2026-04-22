@@ -81,38 +81,31 @@ def get_top_3_pairs_with_stable():
                 token0_symbol, token0_dec = get_token_info(token0)
                 token1_symbol, token1_dec = get_token_info(token1)
                 
-                # Cek apakah pair memiliki stablecoin
                 if not (is_stable(token0) or is_stable(token1)):
                     continue
                 
                 # Tentukan mana stable dan mana token
                 if is_stable(token0):
-                    # Pair: STABLE/TOKEN
-                    stable_reserve = reserve0_raw / (10 ** token0_dec)
-                    token_reserve = reserve1_raw / (10 ** token1_dec)
-                    token_symbol = token1_symbol
-                    token_address = token1
+                    stable_address = token0
                     stable_symbol = token0_symbol
+                    stable_reserve = reserve0_raw / (10 ** token0_dec)
+                    token_address = token1
+                    token_symbol = token1_symbol
+                    token_reserve = reserve1_raw / (10 ** token1_dec)
                 else:
-                    # Pair: TOKEN/STABLE
-                    stable_reserve = reserve1_raw / (10 ** token1_dec)
-                    token_reserve = reserve0_raw / (10 ** token0_dec)
-                    token_symbol = token0_symbol
-                    token_address = token0
+                    stable_address = token1
                     stable_symbol = token1_symbol
+                    stable_reserve = reserve1_raw / (10 ** token1_dec)
+                    token_address = token0
+                    token_symbol = token0_symbol
+                    token_reserve = reserve0_raw / (10 ** token0_dec)
                 
-                # ========== RUMUS HARGA YANG BENAR ==========
-                # Harga token dalam USD = stable_reserve / token_reserve
-                # Contoh: jika 100 USDr dan 1 RECEH, maka harga = 100/1 = $100
-                # TAPI dari screenshot Anda, RECEH harganya $0.01, berarti reserve RECEH lebih besar
-                # Jadi: jika reserve RECEH = 1150, reserve USDr = 11.58, maka harga = 11.58/1150 = $0.01007
-                
+                # Harga = stable_reserve / token_reserve
                 if token_reserve > 0:
                     price = stable_reserve / token_reserve
                 else:
                     price = 0
                 
-                # Total likuiditas dalam USD
                 liquidity_usd = stable_reserve * 2
                 
                 if liquidity_usd > 0.01 and price > 0:
@@ -121,22 +114,20 @@ def get_top_3_pairs_with_stable():
                         "token_symbol": token_symbol,
                         "token_address": token_address,
                         "stable_symbol": stable_symbol,
+                        "stable_address": stable_address,
                         "price": price,
                         "liquidity": liquidity_usd,
                         "token_reserve": token_reserve,
                         "stable_reserve": stable_reserve,
-                        "pair_address": pair_address
                     })
-                    logger.info(f"{token_symbol}/{stable_symbol}: price=${price:.8f}, liq=${liquidity_usd:.2f} (token_reserve={token_reserve:.2f}, stable_reserve={stable_reserve:.2f})")
+                    logger.info(f"{token_symbol}/{stable_symbol}: price=${price:.8f}, liq=${liquidity_usd:.2f}")
                     
             except Exception as e:
                 logger.error(f"Error pair {i}: {e}")
                 continue
         
         valid_pairs.sort(key=lambda x: x['liquidity'], reverse=True)
-        top3 = valid_pairs[:3]
-        logger.info(f"Top 3: {[p['pair_name'] for p in top3]}")
-        return top3
+        return valid_pairs[:3]
         
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -153,20 +144,18 @@ async def get_banner():
 
 async def main():
     logger.info("=" * 50)
-    logger.info("RecehDEX Bot - Top 3 Pairs with USDr/WRIC")
+    logger.info("RecehDEX Bot - Top 3 Pairs")
     logger.info("=" * 50)
     
     if not w3.is_connected():
         logger.error("Cannot connect to Riche Chain")
         return
     
-    logger.info(f"Connected - Block: {w3.eth.block_number}")
-    
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     top_pairs = get_top_3_pairs_with_stable()
     
     if not top_pairs:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="⚠️ No pairs found with USDr or WRIC")
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="⚠️ No pairs found")
         return
     
     # Build message
@@ -189,13 +178,9 @@ async def main():
         
         # Format liquidity
         liq = pair['liquidity']
-        if liq < 1:
-            liq_str = f"${liq:.2f}"
-        else:
-            liq_str = f"${liq:,.2f}"
+        liq_str = f"${liq:,.2f}" if liq >= 1 else f"${liq:.2f}"
         
-        # Link trade
-        trade_url = f"{DEX_URL}?inputCurrency={pair['token_address']}&outputCurrency={USD_ADDRESS}"
+        trade_url = f"{DEX_URL}?inputCurrency={pair['token_address']}&outputCurrency={pair['stable_address']}"
         
         message += f"<b>{idx}. {pair['pair_name']}</b>\n"
         message += f"   💰 Price: <code>{price_str}</code>\n"
@@ -204,13 +189,13 @@ async def main():
     
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     message += f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-    message += "📊 Data real dari Factory RecehDEX"
+    message += "📊 Data RecehDEX jaringan Riche Chain"
     
     # Tombol
     keyboard = [
         [InlineKeyboardButton("📊 RecehDEX", url=DEX_URL)],
         [InlineKeyboardButton("ℹ️ PairInfo", url=PAIR_INFO_URL)],
-        [InlineKeyboardButton("✨ Create Token", url=CREATE_TOKEN_URL)]
+        [InlineKeyboardButton("✨ CreateToken", url=CREATE_TOKEN_URL)]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
