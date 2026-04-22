@@ -15,9 +15,11 @@ jobs:
         with:
           python-version: '3.11'
       
-      - run: pip install web3 python-telegram-bot
+      - name: Install dependencies
+        run: |
+          pip install web3 python-telegram-bot aiohttp
       
-      - name: Jalankan Bot
+      - name: Run Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
