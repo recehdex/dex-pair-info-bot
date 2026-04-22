@@ -1,10 +1,11 @@
 import asyncio
 from web3 import Web3
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 import logging
 from datetime import datetime
 import os
+import requests
 
 # Konfigurasi
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -19,7 +20,10 @@ FACTORY_ADDRESS = "0xAeEdf8B9925c6316171f7c2815e387DE596Fa11B"
 
 RPC_URL = "https://seed-richechain.com"
 EXPLORER_URL = "https://richescan.com"
-DEX_URL = "https://dex.cryptoreceh.com/riche"
+DEX_URL = "https://dex.cryptoreceh.com"
+PAIR_INFO_URL = "https://dex.cryptoreceh.com/info"
+CREATE_TOKEN_URL = "https://app.cryptoreceh.com"
+BANNER_URL = "https://raw.githubusercontent.com/recehdex/images/refs/heads/main/recehdex-banner.png"
 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 
@@ -30,8 +34,7 @@ logger = logging.getLogger(__name__)
 PAIR_ABI = [
     {"constant": True, "inputs": [], "name": "getReserves", "outputs": [{"name": "_reserve0", "type": "uint112"}, {"name": "_reserve1", "type": "uint112"}], "type": "function"},
     {"constant": True, "inputs": [], "name": "token0", "outputs": [{"name": "", "type": "address"}], "type": "function"},
-    {"constant": True, "inputs": [], "name": "token1", "outputs": [{"name": "", "type": "address"}], "type": "function"},
-    {"constant": True, "inputs": [], "name": "totalSupply", "outputs": [{"name": "", "type": "uint256"}], "type": "function"}
+    {"constant": True, "inputs": [], "name": "token1", "outputs": [{"name": "", "type": "address"}], "type": "function"}
 ]
 
 TOKEN_ABI = [
@@ -51,14 +54,15 @@ def get_token_info(token_address):
     except:
         return "Unknown", 18
 
-def get_all_pairs():
+def get_top_pairs():
+    """Ambil top 3 pair berdasarkan likuiditas USD"""
     try:
         factory = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDRESS), abi=FACTORY_ABI)
         total_pairs = factory.functions.allPairsLength().call()
         
-        logger.info(f"Total pairs: {total_pairs}")
+        logger.info(f"Scanning {total_pairs} pairs...")
         
-        pairs = []
+        pairs_data = []
         for i in range(total_pairs):
             try:
                 pair_address = factory.functions.allPairs(i).call()
@@ -67,96 +71,59 @@ def get_all_pairs():
                 token0 = pair_contract.functions.token0().call()
                 token1 = pair_contract.functions.token1().call()
                 reserves = pair_contract.functions.getReserves().call()
-                total_supply = pair_contract.functions.totalSupply().call()
                 
                 token0_symbol, token0_dec = get_token_info(token0)
                 token1_symbol, token1_dec = get_token_info(token1)
                 
                 reserve0 = reserves[0] / (10 ** token0_dec)
                 reserve1 = reserves[1] / (10 ** token1_dec)
-                lp_supply = total_supply / (10 ** 18)
                 
-                # Cari token mana yang USD
+                # Cari USD reserve
                 usd_reserve = 0
-                other_reserve = 0
-                other_address = ""
                 other_symbol = ""
+                other_address = ""
+                price = 0
                 
                 if token0.lower() == USD_ADDRESS.lower():
                     usd_reserve = reserve0
-                    other_reserve = reserve1
-                    other_address = token1
                     other_symbol = token1_symbol
+                    other_address = token1
+                    price = reserve1 / reserve0 if reserve0 > 0 else 0
                 elif token1.lower() == USD_ADDRESS.lower():
                     usd_reserve = reserve1
-                    other_reserve = reserve0
-                    other_address = token0
                     other_symbol = token0_symbol
+                    other_address = token0
+                    price = reserve0 / reserve1 if reserve1 > 0 else 0
                 
-                # Hitung harga
-                price = other_reserve / usd_reserve if usd_reserve > 0 else 0
-                
-                # Total likuiditas dalam USD
-                liquidity_usd = usd_reserve * 2 if usd_reserve > 0 else 0
-                
-                # Hanya ambil pair yang likuiditasnya > 0
-                if liquidity_usd > 0 and price > 0:
-                    pairs.append({
-                        "address": pair_address,
-                        "token0_symbol": token0_symbol,
-                        "token1_symbol": token1_symbol,
-                        "pair_name": f"{other_symbol}/USD",
+                if usd_reserve > 0 and price > 0:
+                    liquidity_usd = usd_reserve * 2
+                    pairs_data.append({
+                        "symbol": other_symbol,
+                        "address": other_address,
                         "price": price,
-                        "liquidity_usd": liquidity_usd,
-                        "lp_supply": lp_supply,
-                        "other_address": other_address,
-                        "other_symbol": other_symbol
+                        "liquidity": liquidity_usd,
+                        "pair_address": pair_address
                     })
-            except Exception as e:
+            except:
                 continue
         
-        # Urutkan berdasarkan likuiditas
-        pairs.sort(key=lambda x: x['liquidity_usd'], reverse=True)
-        return pairs
+        # Sort by liquidity (descending) and take top 3
+        pairs_data.sort(key=lambda x: x['liquidity'], reverse=True)
+        return pairs_data[:3]
+        
     except Exception as e:
         logger.error(f"Error: {e}")
         return []
 
-def format_caption(pairs, start_idx, end_idx):
-    """Format caption dengan link trade langsung"""
-    
-    caption = "<b>🔥 RECEHDEX - ACTIVE PAIRS</b>\n"
-    caption += "<code>═══════════════════════════════</code>\n\n"
-    
-    for pair in pairs[start_idx:end_idx]:
-        # Format harga
-        if pair["price"] < 0.000001:
-            price_str = f"${pair['price']:.10f}"
-        elif pair["price"] < 0.001:
-            price_str = f"${pair['price']:.8f}"
-        elif pair["price"] < 1:
-            price_str = f"${pair['price']:.6f}"
-        else:
-            price_str = f"${pair['price']:.2f}"
-        
-        # Link trade (sesuai format yang Anda berikan)
-        trade_url = f"{DEX_URL}?inputCurrency={USD_ADDRESS}&outputCurrency={pair['other_address']}"
-        
-        caption += f"<b>🪙 {pair['pair_name']}</b>\n"
-        caption += f"   💰 Price: <code>{price_str}</code>\n"
-        caption += f"   💧 Liquidity: <code>${pair['liquidity_usd']:,.0f}</code>\n"
-        caption += f"   📦 LP Supply: <code>{pair['lp_supply']:,.0f}</code>\n"
-        caption += f"   🔗 <a href='{trade_url}'>Trade on RecehDEX</a>\n\n"
-    
-    caption += "<code>═══════════════════════════════</code>\n"
-    caption += f"<i>🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</i>\n"
-    
-    total = len(pairs)
-    current_page = (start_idx // 5) + 1
-    total_pages = (total + 4) // 5
-    caption += f"\n<i>📄 Page {current_page} of {total_pages} ({total} active pairs)</i>"
-    
-    return caption
+async def get_banner():
+    """Download banner"""
+    try:
+        response = requests.get(BANNER_URL, timeout=10)
+        if response.status_code == 200:
+            return response.content
+    except:
+        pass
+    return None
 
 async def main():
     logger.info("Starting RecehDEX Bot...")
@@ -165,33 +132,79 @@ async def main():
         logger.error("Cannot connect to Riche Chain")
         return
     
-    logger.info(f"Connected to Riche Chain, block: {w3.eth.block_number}")
-    
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    pairs = get_all_pairs()
     
-    if not pairs:
+    # Get top 3 pairs
+    top_pairs = get_top_pairs()
+    
+    if not top_pairs:
         await bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,
-            text="⚠️ No active pairs found on RecehDEX",
+            text="⚠️ No active pairs found",
             parse_mode=ParseMode.HTML
         )
         return
     
-    logger.info(f"Found {len(pairs)} active pairs")
+    # Build message
+    message = "<b>🏆 RECEHDEX - TOP 3 PAIRS</b>\n"
+    message += "<code>━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
     
-    # Kirim per 5 pair
-    for i in range(0, len(pairs), 5):
-        caption = format_caption(pairs, i, i+5)
+    for idx, pair in enumerate(top_pairs, 1):
+        # Format price
+        if pair['price'] < 0.000001:
+            price_str = f"${pair['price']:.12f}"
+        elif pair['price'] < 0.0001:
+            price_str = f"${pair['price']:.10f}"
+        elif pair['price'] < 0.01:
+            price_str = f"${pair['price']:.8f}"
+        elif pair['price'] < 1:
+            price_str = f"${pair['price']:.6f}"
+        else:
+            price_str = f"${pair['price']:.4f}"
+        
+        message += f"<b>{idx}. {pair['symbol']}/USD</b>\n"
+        message += f"   💰 Price: <code>{price_str}</code>\n"
+        message += f"   💧 Liquidity: <code>${pair['liquidity']:,.2f}</code>\n"
+        message += f"   🔗 <a href='{DEX_URL}?inputCurrency={USD_ADDRESS}&outputCurrency={pair['address']}'>Trade Now</a>\n\n"
+    
+    message += "<code>━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+    message += f"<i>🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</i>"
+    
+    # Tombol inline
+    keyboard = [
+        [
+            InlineKeyboardButton("📊 RecehDEX", url=DEX_URL),
+            InlineKeyboardButton("ℹ️ PairInfo", url=PAIR_INFO_URL),
+        ],
+        [
+            InlineKeyboardButton("✨ Create Token", url=CREATE_TOKEN_URL),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Download banner
+    banner = await get_banner()
+    
+    if banner:
+        # Kirim banner + caption + tombol
+        await bot.send_photo(
+            chat_id=TELEGRAM_CHAT_ID,
+            photo=banner,
+            caption=message,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+        logger.info("Sent banner + top 3 pairs")
+    else:
+        # Kirim message aja
         await bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,
-            text=caption,
+            text=message,
             parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
+            reply_markup=reply_markup,
+            disable_web_page_preview=False
         )
-        await asyncio.sleep(1)
-    
-    logger.info(f"Sent {len(pairs)} pairs in {((len(pairs)+4)//5)} messages")
+        logger.info("Sent top 3 pairs (no banner)")
 
 if __name__ == "__main__":
     asyncio.run(main())
