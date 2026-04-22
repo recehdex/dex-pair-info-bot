@@ -42,7 +42,7 @@ jobs:
       with:
         name: bot-cache
         path: .
-      continue-on-error: true  # ← INI PENTING: tetap lanjut meskipun artifact tidak ditemukan
+      continue-on-error: true  # ← INI KUNCI UTAMA
     
     - name: Run RecehDEX Bot
       env:
@@ -57,4 +57,4 @@ jobs:
         name: bot-cache
         path: pairs_cache.json
         retention-days: 7
-        if-no-files-found: warn  # ← Tambahkan ini
+        if-no-files-found: warn
