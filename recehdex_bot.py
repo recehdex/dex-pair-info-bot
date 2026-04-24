@@ -197,7 +197,7 @@ async def main():
         
         # Tambahkan satuan untuk WRIC
         if stable_type == "WRIC":
-            price_str = f"{price_str} WRIC"
+            price_str = f"{price_str} RIC"
         
         # Format liquidity
         liq = pair['liquidity']
