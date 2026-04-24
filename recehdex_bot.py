@@ -201,11 +201,11 @@ async def main():
         message += f"<b>{idx}. {pair['pair_name']}</b>\n\n"
         message += f"   💰 Price: <code>{price_str}</code>\n"
         message += f"   💧 Liquidity: <code>{liq_str}</code>\n"
-        message += f"   🔗 <a href='{trade_url}'>Trade Now</a>\n\n"
+        message += f"   👉 <a href='{trade_url}'>Trade Now</a>\n\n"
     
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     message += f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
-    message += "💰 Data RecehDEX jaringan RicheChain"
+    message += "💰 Data from RecehDEX on RicheChain"
     
     # Tombol
     keyboard = [
