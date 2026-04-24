@@ -1,3 +1,12 @@
+import asyncio
+from web3 import Web3
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
+import logging
+from datetime import datetime
+import os
+import requests
+
 # ================= KONFIGURASI =================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
