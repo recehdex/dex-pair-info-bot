@@ -241,7 +241,7 @@ async def main():
         message += f"   ┌─────────────────────\n"
         message += f"   ├ 💰 <b>Price</b> : <code>{price_str}</code>\n"
         message += f"   ├ 💧 <b>Liquidity</b> : <code>{liq_str}</code>\n"
-        message += f"   ├ 📊 <b>Res</b> : {token_reserve_formatted} {pair['token_symbol']} | {stable_reserve_formatted} {pair['stable_symbol']}\n"
+        message += f"   ├ 📊 <b>Res</b> : {token_reserve_formatted} {pair['token_symbol']} & {stable_reserve_formatted} {pair['stable_symbol']}\n"
         message += f"   └ 🔗 <b>Trade</b> : <a href='{trade_url}'>Click Here</a>\n\n"
     
     # Add market summary
