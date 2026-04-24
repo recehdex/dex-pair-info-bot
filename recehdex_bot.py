@@ -16,8 +16,8 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
 
 # ================= ADDRESS =================
 FACTORY_ADDRESS = "0xAeEdf8B9925c6316171f7c2815e387DE596Fa11B"
-USD_ADDRESS = "0x6dC1bC519a8c861d509351763a6f9aBb6B07b57B"
-WRIC_ADDRESS = "0xEa126036c94Ab6A384A25A70e29E2fE2D4a91e68"
+USD_ADDRESS = "0x6dC1bC519a8c861d509351763a6f9aBb6B07b57B"  # USDr
+WRIC_ADDRESS = "0xEa126036c94Ab6A384A25A70e29E2fE2D4a91e68"  # WRIC
 
 RPC_URL = "https://seed-richechain.com"
 DEX_URL = "https://dex.cryptoreceh.com/riche"
@@ -60,19 +60,12 @@ def is_stable(token_address):
     return token_address.lower() in STABLE_ADDRESSES
 
 def get_stable_type(stable_address):
+    """Return 'USD' for USDr, 'WRIC' for WRIC"""
     if stable_address.lower() == USD_ADDRESS.lower():
         return "USD"
     elif stable_address.lower() == WRIC_ADDRESS.lower():
         return "WRIC"
     return "Unknown"
-
-def format_number(num):
-    if num >= 1_000_000:
-        return f"{num/1_000_000:.2f}M"
-    elif num >= 1_000:
-        return f"{num/1_000:.2f}K"
-    else:
-        return f"{num:.2f}"
 
 def get_top_3_pairs_with_stable():
     try:
@@ -99,6 +92,7 @@ def get_top_3_pairs_with_stable():
                 if not (is_stable(token0) or is_stable(token1)):
                     continue
                 
+                # Tentukan mana stable dan mana token
                 if is_stable(token0):
                     stable_address = token0
                     stable_symbol = token0_symbol
@@ -114,6 +108,7 @@ def get_top_3_pairs_with_stable():
                     token_symbol = token0_symbol
                     token_reserve = reserve0_raw / (10 ** token0_dec)
                 
+                # Hitung harga (dalam stable coin)
                 if token_reserve > 0:
                     price_in_stable = stable_reserve / token_reserve
                 else:
@@ -130,8 +125,8 @@ def get_top_3_pairs_with_stable():
                         "token_address": token_address,
                         "stable_symbol": stable_symbol,
                         "stable_address": stable_address,
-                        "stable_type": stable_type,
-                        "price": price_in_stable,
+                        "stable_type": stable_type,  # "USD" or "WRIC"
+                        "price": price_in_stable,   # Harga dalam stable coin (USD atau WRIC)
                         "liquidity": liquidity_usd,
                         "token_reserve": token_reserve,
                         "stable_reserve": stable_reserve,
@@ -174,38 +169,52 @@ async def main():
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="⚠️ No pairs found")
         return
     
-    # Build clean message - tanpa garis alay, semua rata kiri
-    message = "🏆 <b>RECEHDEX - TOP 3 PAIRS</b>\n\n"
+    # Build message
+    message = "🏆 <b>RECEHDEX - TOP 3 PAIRS</b>\n"
+    message += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
     for idx, pair in enumerate(top_pairs, 1):
-        # Format price
-        if pair['stable_type'] == "USD":
-            price_str = f"${pair['price']:.6f}"
+        # Format price dengan unit yang benar
+        price = pair['price']
+        stable_type = pair['stable_type']
+        
+        # Display price dengan unit yang sesuai
+        if stable_type == "USD":
+            price_unit = "$"
+        else:  # WRIC
+            price_unit = ""
+        
+        if price < 0.000001:
+            price_str = f"{price_unit}{price:.12f}"
+        elif price < 0.0001:
+            price_str = f"{price_unit}{price:.10f}"
+        elif price < 0.01:
+            price_str = f"{price_unit}{price:.8f}"
+        elif price < 1:
+            price_str = f"{price_unit}{price:.6f}"
         else:
-            price_str = f"{pair['price']:.6f} WRIC"
+            price_str = f"{price_unit}{price:.4f}"
+        
+        # Tambahkan satuan untuk WRIC
+        if stable_type == "WRIC":
+            price_str = f"{price_str} WRIC"
         
         # Format liquidity
-        liq_str = f"${pair['liquidity']:.2f}"
-        
-        # Format reserves
-        token_res = format_number(pair['token_reserve'])
-        stable_res = format_number(pair['stable_reserve'])
+        liq = pair['liquidity']
+        liq_str = f"${liq:,.2f}" if liq >= 1 else f"${liq:.2f}"
         
         trade_url = f"{DEX_URL}?inputCurrency={pair['token_address']}&outputCurrency={pair['stable_address']}"
         
         message += f"<b>{idx}. {pair['pair_name']}</b>\n"
-        message += f"Price: {price_str}\n"
-        message += f"Liquidity: {liq_str}\n"
-        message += f"Reserves: {token_res} {pair['token_symbol']} / {stable_res} {pair['stable_symbol']}\n"
-        message += f"<a href='{trade_url}'>Trade Now</a>\n\n"
+        message += f"   💰 Price: <code>{price_str}</code>\n"
+        message += f"   💧 Liquidity: <code>{liq_str}</code>\n"
+        message += f"   🔗 <a href='{trade_url}'>Trade Now</a>\n\n"
     
-    # Total liquidity
-    total_liq = sum(p['liquidity'] for p in top_pairs)
-    message += f"Total Liquidity (Top 3): ${total_liq:.2f}\n\n"
-    message += f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-    message += f"Data RecehDEX jaringan RicheChain"
+    message += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    message += f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+    message += "💰 Data RecehDEX jaringan RicheChain"
     
-    # Buttons
+    # Tombol
     keyboard = [
         [InlineKeyboardButton("📊 RecehDEX", url=DEX_URL)],
         [InlineKeyboardButton("ℹ️ PairInfo", url=PAIR_INFO_URL)],
@@ -213,7 +222,7 @@ async def main():
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Send
+    # Kirim
     banner = await get_banner()
     if banner:
         await bot.send_photo(
