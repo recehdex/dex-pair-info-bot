@@ -15,15 +15,15 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set")
 
 # ================= ADDRESS =================
-FACTORY_ADDRESS = "0x8E9556415124b6C726D5C3610d25c24Be8AC2304"
-USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
-WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+FACTORY_ADDRESS = "0xAeEdf8B9925c6316171f7c2815e387DE596Fa11B"
+USDR_ADDRESS = "0x6dC1bC519a8c861d509351763a6f9aBb6B07b57B"
+WRIC_ADDRESS = "0xEa126036c94Ab6A384A25A70e29E2fE2D4a91e68"
 
-RPC_URL = "https://bsc-dataseed1.binance.org"
-DEX_URL = "https://dex.cryptoreceh.com/bsc"
+RPC_URL = "https://seed-richechain.com"
+DEX_URL = "https://dex.cryptoreceh.com/riche"
 PAIR_INFO_URL = "https://dex.cryptoreceh.com/info"
 CREATE_TOKEN_URL = "https://app.cryptoreceh.com"
-BANNER_URL = "https://raw.githubusercontent.com/recehdex/images/refs/heads/main/recehdex-banner-bsc.png"
+BANNER_URL = "https://raw.githubusercontent.com/recehdex/images/refs/heads/main/recehdex-banner.png"
 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 
@@ -47,7 +47,7 @@ TOKEN_ABI = [
     {"inputs": [], "name": "decimals", "outputs": [{"type": "uint8"}], "stateMutability": "view", "type": "function"}
 ]
 
-STABLE_ADDRESSES = [USDT_ADDRESS.lower(), WBNB_ADDRESS.lower()]
+STABLE_ADDRESSES = [USDR_ADDRESS.lower(), WRIC_ADDRESS.lower()]
 
 def get_token_info(token_address):
     try:
@@ -60,14 +60,14 @@ def is_stable(token_address):
     return token_address.lower() in STABLE_ADDRESSES
 
 def get_stable_type(stable_address):
-    if stable_address.lower() == USDT_ADDRESS.lower():
-        return "USDT"
-    elif stable_address.lower() == WBNB_ADDRESS.lower():
-        return "WBNB"
+    if stable_address.lower() == USDR_ADDRESS.lower():
+        return "USDR"
+    elif stable_address.lower() == WRIC_ADDRESS.lower():
+        return "WRIC"
     return "Unknown"
 
-def get_bnb_price_usd():
-    """Cari harga BNB dari pair WBNB/USDT di factory"""
+def get_ric_price_usd():
+    """Cari harga RIC dari pair WRIC/USDR di factory"""
     try:
         factory = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDRESS), abi=FACTORY_ABI)
         total_pairs = factory.functions.allPairsLength().call()
@@ -80,32 +80,32 @@ def get_bnb_price_usd():
                 token0 = pair.functions.token0().call().lower()
                 token1 = pair.functions.token1().call().lower()
                 
-                # Cari pair WBNB/USDT
-                if (WBNB_ADDRESS.lower() in [token0, token1] and 
-                    USDT_ADDRESS.lower() in [token0, token1]):
+                # Cari pair WRIC/USDR
+                if (WRIC_ADDRESS.lower() in [token0, token1] and 
+                    USDR_ADDRESS.lower() in [token0, token1]):
                     
                     reserves = pair.functions.getReserves().call()
                     
-                    if token0 == WBNB_ADDRESS.lower():
-                        wbnb_reserve = reserves[0] / 1e18
-                        usdt_reserve = reserves[1] / 1e18
+                    if token0 == WRIC_ADDRESS.lower():
+                        wric_reserve = reserves[0] / 1e18
+                        usdr_reserve = reserves[1] / 1e18
                     else:
-                        wbnb_reserve = reserves[1] / 1e18
-                        usdt_reserve = reserves[0] / 1e18
+                        wric_reserve = reserves[1] / 1e18
+                        usdr_reserve = reserves[0] / 1e18
                     
-                    if wbnb_reserve > 0:
-                        bnb_price = usdt_reserve / wbnb_reserve
-                        logger.info(f"BNB Price: ${bnb_price:.2f}")
-                        return bnb_price
+                    if wric_reserve > 0:
+                        ric_price = usdr_reserve / wric_reserve
+                        logger.info(f"RIC Price: ${ric_price:.2f}")
+                        return ric_price
                         
             except:
                 continue
                 
-        logger.warning("BNB price not found, using $600")
+        logger.warning("RIC price not found, using $600")
         return 600
         
     except Exception as e:
-        logger.error(f"Error getting BNB price: {e}")
+        logger.error(f"Error getting RIC price: {e}")
         return 600
 
 def get_top_3_pairs():
@@ -114,8 +114,8 @@ def get_top_3_pairs():
         total_pairs = factory.functions.allPairsLength().call()
         logger.info(f"Total pairs: {total_pairs}")
         
-        # Dapatkan harga BNB dulu
-        bnb_price = get_bnb_price_usd()
+        # Dapatkan harga RIC dulu
+        ric_price = get_ric_price_usd()
         
         valid_pairs = []
         
@@ -166,15 +166,15 @@ def get_top_3_pairs():
                 stable_type = get_stable_type(stable_address)
                 
                 # HITUNG HARGA DALAM USD
-                if stable_type == "USDT":
-                    # Pair TOKEN/USDT - USDT langsung 1:1 USD
+                if stable_type == "USDR":
+                    # Pair TOKEN/USDR - USDR langsung 1:1 USD
                     price_usd = stable_reserve / token_reserve
                     liquidity_usd = stable_reserve * 2
                     
-                else:  # WBNB
-                    # Pair TOKEN/WBNB - konversi ke USD
-                    price_usd = (stable_reserve / token_reserve) * bnb_price
-                    liquidity_usd = (stable_reserve * bnb_price) * 2
+                else:  # WRIC
+                    # Pair TOKEN/WRIC - konversi ke USD
+                    price_usd = (stable_reserve / token_reserve) * ric_price
+                    liquidity_usd = (stable_reserve * ric_price) * 2
                 
                 if liquidity_usd > 0.01 and price_usd > 0:
                     valid_pairs.append({
@@ -214,7 +214,7 @@ async def main():
     logger.info("=" * 50)
     
     if not w3.is_connected():
-        logger.error("Cannot connect to BSC Chain")
+        logger.error("Cannot connect to Riche Chain")
         return
     
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -265,7 +265,7 @@ async def main():
     
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     message += f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
-    message += "💰 Data from RecehDEX on BSC"
+    message += "💰 Data from RecehDEX on Riche Chain"
     
     # Tombol
     keyboard = [
