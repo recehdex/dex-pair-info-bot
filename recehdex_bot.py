@@ -15,15 +15,15 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set")
 
 # ================= ADDRESS =================
-FACTORY_ADDRESS = "0xAeEdf8B9925c6316171f7c2815e387DE596Fa11B"
-USD_ADDRESS = "0x6dC1bC519a8c861d509351763a6f9aBb6B07b57B"
-WRIC_ADDRESS = "0xEa126036c94Ab6A384A25A70e29E2fE2D4a91e68"
+FACTORY_ADDRESS = "0x8E9556415124b6C726D5C3610d25c24Be8AC2304"
+USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
+WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
 
-RPC_URL = "https://seed-richechain.com"
-DEX_URL = "https://dex.cryptoreceh.com/riche"
+RPC_URL = "https://bsc-dataseed1.binance.org"
+DEX_URL = "https://dex.cryptoreceh.com/bsc"
 PAIR_INFO_URL = "https://dex.cryptoreceh.com/info"
 CREATE_TOKEN_URL = "https://app.cryptoreceh.com"
-BANNER_URL = "https://raw.githubusercontent.com/recehdex/images/refs/heads/main/recehdex-banner.png"
+BANNER_URL = "https://raw.githubusercontent.com/recehdex/images/refs/heads/main/recehdex-banner-bsc.png"
 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
 
@@ -47,7 +47,7 @@ TOKEN_ABI = [
     {"inputs": [], "name": "decimals", "outputs": [{"type": "uint8"}], "stateMutability": "view", "type": "function"}
 ]
 
-STABLE_ADDRESSES = [USD_ADDRESS.lower(), WRIC_ADDRESS.lower()]
+STABLE_ADDRESSES = [USDT_ADDRESS.lower(), WBNB_ADDRESS.lower()]
 
 def get_token_info(token_address):
     try:
@@ -60,17 +60,62 @@ def is_stable(token_address):
     return token_address.lower() in STABLE_ADDRESSES
 
 def get_stable_type(stable_address):
-    if stable_address.lower() == USD_ADDRESS.lower():
-        return "USD"
-    elif stable_address.lower() == WRIC_ADDRESS.lower():
-        return "WRIC"
+    if stable_address.lower() == USDT_ADDRESS.lower():
+        return "USDT"
+    elif stable_address.lower() == WBNB_ADDRESS.lower():
+        return "WBNB"
     return "Unknown"
 
-def get_top_3_pairs_with_stable():
+def get_bnb_price_usd():
+    """Cari harga BNB dari pair WBNB/USDT di factory"""
+    try:
+        factory = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDRESS), abi=FACTORY_ABI)
+        total_pairs = factory.functions.allPairsLength().call()
+        
+        for i in range(total_pairs):
+            try:
+                pair_address = factory.functions.allPairs(i).call()
+                pair = w3.eth.contract(address=Web3.to_checksum_address(pair_address), abi=PAIR_ABI)
+                
+                token0 = pair.functions.token0().call().lower()
+                token1 = pair.functions.token1().call().lower()
+                
+                # Cari pair WBNB/USDT
+                if (WBNB_ADDRESS.lower() in [token0, token1] and 
+                    USDT_ADDRESS.lower() in [token0, token1]):
+                    
+                    reserves = pair.functions.getReserves().call()
+                    
+                    if token0 == WBNB_ADDRESS.lower():
+                        wbnb_reserve = reserves[0] / 1e18
+                        usdt_reserve = reserves[1] / 1e18
+                    else:
+                        wbnb_reserve = reserves[1] / 1e18
+                        usdt_reserve = reserves[0] / 1e18
+                    
+                    if wbnb_reserve > 0:
+                        bnb_price = usdt_reserve / wbnb_reserve
+                        logger.info(f"BNB Price: ${bnb_price:.2f}")
+                        return bnb_price
+                        
+            except:
+                continue
+                
+        logger.warning("BNB price not found, using $600")
+        return 600
+        
+    except Exception as e:
+        logger.error(f"Error getting BNB price: {e}")
+        return 600
+
+def get_top_3_pairs():
     try:
         factory = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDRESS), abi=FACTORY_ABI)
         total_pairs = factory.functions.allPairsLength().call()
         logger.info(f"Total pairs: {total_pairs}")
+        
+        # Dapatkan harga BNB dulu
+        bnb_price = get_bnb_price_usd()
         
         valid_pairs = []
         
@@ -88,47 +133,60 @@ def get_top_3_pairs_with_stable():
                 token0_symbol, token0_dec = get_token_info(token0)
                 token1_symbol, token1_dec = get_token_info(token1)
                 
+                # Skip jika tidak ada stable token
                 if not (is_stable(token0) or is_stable(token1)):
                     continue
                 
+                # Tentukan mana stable token
                 if is_stable(token0):
                     stable_address = token0
                     stable_symbol = token0_symbol
-                    stable_reserve = reserve0_raw / (10 ** token0_dec)
+                    stable_decimals = token0_dec
+                    stable_reserve_raw = reserve0_raw
                     token_address = token1
                     token_symbol = token1_symbol
-                    token_reserve = reserve1_raw / (10 ** token1_dec)
+                    token_decimals = token1_dec
+                    token_reserve_raw = reserve1_raw
                 else:
                     stable_address = token1
                     stable_symbol = token1_symbol
-                    stable_reserve = reserve1_raw / (10 ** token1_dec)
+                    stable_decimals = token1_dec
+                    stable_reserve_raw = reserve1_raw
                     token_address = token0
                     token_symbol = token0_symbol
-                    token_reserve = reserve0_raw / (10 ** token0_dec)
+                    token_decimals = token0_dec
+                    token_reserve_raw = reserve0_raw
                 
-                if token_reserve > 0:
-                    price_in_stable = stable_reserve / token_reserve
-                else:
-                    price_in_stable = 0
+                stable_reserve = stable_reserve_raw / (10 ** stable_decimals)
+                token_reserve = token_reserve_raw / (10 ** token_decimals)
                 
-                liquidity_usd = stable_reserve * 2
+                if token_reserve == 0:
+                    continue
                 
-                if liquidity_usd > 0.01 and price_in_stable > 0:
-                    stable_type = get_stable_type(stable_address)
+                stable_type = get_stable_type(stable_address)
+                
+                # HITUNG HARGA DALAM USD
+                if stable_type == "USDT":
+                    # Pair TOKEN/USDT - USDT langsung 1:1 USD
+                    price_usd = stable_reserve / token_reserve
+                    liquidity_usd = stable_reserve * 2
                     
+                else:  # WBNB
+                    # Pair TOKEN/WBNB - konversi ke USD
+                    price_usd = (stable_reserve / token_reserve) * bnb_price
+                    liquidity_usd = (stable_reserve * bnb_price) * 2
+                
+                if liquidity_usd > 0.01 and price_usd > 0:
                     valid_pairs.append({
                         "pair_name": f"{token_symbol}/{stable_symbol}",
-                        "token_symbol": token_symbol,
                         "token_address": token_address,
-                        "stable_symbol": stable_symbol,
                         "stable_address": stable_address,
                         "stable_type": stable_type,
-                        "price": price_in_stable,
+                        "price": price_usd,  # SUDAH DALAM USD
                         "liquidity": liquidity_usd,
-                        "token_reserve": token_reserve,
-                        "stable_reserve": stable_reserve,
                     })
-                    logger.info(f"{token_symbol}/{stable_symbol}: price={price_in_stable:.8f} {stable_type}, liq=${liquidity_usd:.2f}")
+                    
+                    logger.info(f"{token_symbol}/{stable_symbol}: price=${price_usd:.8f} USD, liq=${liquidity_usd:.2f}")
                     
             except Exception as e:
                 logger.error(f"Error pair {i}: {e}")
@@ -156,11 +214,11 @@ async def main():
     logger.info("=" * 50)
     
     if not w3.is_connected():
-        logger.error("Cannot connect to Riche Chain")
+        logger.error("Cannot connect to BSC Chain")
         return
     
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    top_pairs = get_top_3_pairs_with_stable()
+    top_pairs = get_top_3_pairs()
     
     if not top_pairs:
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="⚠️ No pairs found")
@@ -171,7 +229,7 @@ async def main():
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
     for idx, pair in enumerate(top_pairs, 1):
-        # Format price
+        # Format price - SEMUA DALAM USD
         price = pair['price']
         
         if price < 0.000001:
@@ -185,19 +243,21 @@ async def main():
         else:
             price_str = f"{price:.4f}"
         
-        # Tambahkan satuan di belakang
-        if pair['stable_type'] == "USD":
-            price_str = f"{price_str} USD"
-        else:
-            price_str = f"{price_str} RIC"
+        # Hilangkan trailing zeros
+        price_str = price_str.rstrip('0').rstrip('.')
+        
+        # TAMPILKAN DENGAN $ DAN USD UNTUK SEMUA PAIR
+        price_str = f"${price_str} USD"
         
         # Format liquidity
         liq = pair['liquidity']
-        liq_str = f"${liq:,.2f}" if liq >= 1 else f"${liq:.2f}"
+        if liq >= 1000:
+            liq_str = f"${liq/1000:.2f}K"
+        else:
+            liq_str = f"${liq:.2f}"
         
         trade_url = f"{DEX_URL}?inputCurrency={pair['token_address']}&outputCurrency={pair['stable_address']}"
         
-        # Alinea baru setelah nama pair
         message += f"<b>{idx}. {pair['pair_name']}</b>\n\n"
         message += f"   💰 Price: <code>{price_str}</code>\n"
         message += f"   💧 Liquidity: <code>{liq_str}</code>\n"
@@ -205,7 +265,7 @@ async def main():
     
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     message += f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
-    message += "💰 Data from RecehDEX on RicheChain"
+    message += "💰 Data from RecehDEX on BSC"
     
     # Tombol
     keyboard = [
