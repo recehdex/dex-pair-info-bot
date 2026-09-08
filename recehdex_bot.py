@@ -22,7 +22,7 @@ WRIC_ADDRESS = "0xEa126036c94Ab6A384A25A70e29E2fE2D4a91e68"
 RPC_URL = "https://seed-richechain.com"
 DEX_URL = "https://receh.web.id/dex/#/swap"
 PAIR_INFO_URL = "https://receh.web.id/dex/info/"
-CREATE_TOKEN_URL = "https://receh.web.id/dex/#/swap"
+CREATE_TOKEN_URL = "https://tokenkripto.github.io/"
 BANNER_URL = "https://raw.githubusercontent.com/recehdex/images/refs/heads/main/recehdex-banner.png"
 
 w3 = Web3(Web3.HTTPProvider(RPC_URL))
